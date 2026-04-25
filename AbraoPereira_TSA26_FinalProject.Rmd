@@ -1,0 +1,456 @@
+---
+title: "Time Series Analysis of Sea Surface Temperature on the Northern Great Barrier Reef, Australia"
+subtitle: "ENVIRON 797 - Time Series Analysis" 
+author: "Abrao Soares Pereira"
+date: "April 24, 2026"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts = list(width.cutoff = 50), tidy = TRUE)
+```
+
+```{r packages, message=FALSE, warning=FALSE}
+# Load packages
+library(forecast)
+library(tseries)
+library(Kendall)
+library(ggplot2)
+library(lubridate)
+library(cowplot)
+library(tidyverse)
+```
+
+# Introduction and Motivation
+
+Coral reefs are the most vulnerable marine habitats, they are sensitive to lights, temperatures, and human touch. All of these are the major challenges in managing coral reefs, specially with the increasing eco-tourism needs. One of the most biodiverse coral reefs on earth is located in the Great Barrier Reef (GBR), Australia's. However, in the past decades it has experienced an unprecedented acceleration of mass coral bleaching events. Since 1998, in total it already impacted by eight mass bleaching events have been documented on the GBR, with six of them occurring after 2016 (AIMS, 2025; Hughes et al., 2017).
+
+The proximate driver of these events is thermal stress, driven by climate change. Marine heatwaves (MHW), defined by Hobday et al. (2016) as discrete prolonged warm water events lasting at least five days above the seasonally varying 90th-percentile threshold, push corals beyond their physiological tolerance. NOAA Coral Reef Watch operationalizes this stress through metrics like Degree Heating Weeks (DHW), which accumulates positive thermal anomalies over a rolling 12-week window.
+
+This project applies time series analysis to four decades of satellite sea surface temperature (SST) observations for the Northern GBR. The goals are to:
+
+1.  Quantify long-term trend and seasonal in SST.
+2.  Develop and compare ARIMA-based forecasting models (manual SARIMA, auto.arima, Seasonal Naive baseline).
+3.  Discuss what these projections imply for thermal stress risk on the reef.
+
+## Research Question
+
+Can time series analysis of SST detect long-term trends and seasonal patterns in the Northern GBR, and forecast SST trajectories that bear on future thermal stress risk to coral reef ecosystems?
+
+# Dataset Description
+
+The primary dataset is the NOAA Coral Reef Watch (CRW) Daily 5km Regional Virtual Station product for the Northern GBR sub-region (NOAA CRW, 2025). The Regional Virtual Station methodology aggregates the daily 5 km global CoralTemp SST product across all reef-bearing pixels within a sub-regional polygon, then reports the value from the pixel containing the 90th-percentile HotSpot for each day.
+
+-   **Source:** NOAA CRW, file `gbr_northern.txt` (downloaded from NOAA, then converted to CSV)
+-   **Temporal span:** January 1985 - April 2026, total of 41 years of daily observations
+-   **Aggregation:** Daily SST aggregated to monthly mean SST
+-   **Reason for monthly aggregation:** Monthly resolution (\~480 obs) gives a clean annual seasonal cycle (period = 12), preserves the long-term trend, supports SARIMA and decompose-based modeling, and is the temporal scale at which mass bleaching events are typically reported.
+
+# Data Wrangling
+
+```{r import-data}
+# Import the cleaned SST CSV
+sst_daily <- read.csv(
+  "/Users/abraopereira/Documents/ENVIRON 797 /Final_Project_Report _SST/Time-Series-Analysis-SST-Project/gbr_northern_sst.csv",
+  stringsAsFactors = FALSE
+)
+
+# Convert Date column from character to Date class
+sst_daily <- sst_daily %>%
+  mutate(Date = as.Date(Date))
+
+head(sst_daily)
+```
+
+```{r aggregate-monthly}
+# Aggregate daily SST to monthly means
+sst_monthly <- sst_daily %>%
+  mutate(year = year(Date), month = month(Date)) %>%
+  group_by(year, month) %>%
+  summarise(sst = mean(SST, na.rm = TRUE), n_days = n(), .groups = "drop") %>%
+  filter(n_days >= 20) %>%
+  mutate(date = make_date(year, month, 1)) %>%
+  arrange(date)
+
+# Trim to complete years for cleaner seasonality
+start_year <- min(sst_monthly$year[sst_monthly$month == 1])
+end_year   <- max(sst_monthly$year[sst_monthly$month == 12])
+
+sst_monthly <- sst_monthly %>%
+  filter(year >= start_year, year <= end_year)
+
+# Number of observations
+nobs <- nrow(sst_monthly)
+cat("Monthly observations: ", nobs, "\n")
+cat("Period: ", start_year, " to ", end_year, "\n")
+```
+
+```{r ts-object}
+# Create time series object with start = c(year, month) and frequency = 12
+sst_ts <- ts(
+  sst_monthly$sst,
+  start = c(start_year, 1),
+  frequency = 12
+)
+```
+
+# Initial Analysis Time Series Plot, ACF, and PACF
+
+Plot the SST series over time, ACF, and PACF.
+
+```{r q1-plot}
+ggplot(sst_monthly, aes(x = date, y = sst)) +
+  geom_line() +
+  labs(title = "Monthly Mean SST - Northern Great Barrier Reef (1985-2025)",
+       x = "Year", y = "SST (degrees C)")
+```
+
+```{r q1-acf-pacf, fig.width=8, fig.height=4}
+par(mfrow = c(1,2))
+Acf(sst_ts, lag.max = 40, main = "ACF of Original SST")
+Pacf(sst_ts, lag.max = 40, main = "PACF of Original SST")
+```
+
+**Answer:** The series shows a clear annual cycle with austral summer (Jan-Mar) maxima and winter (Jul-Aug) minima, plus a slow upward drift in the baseline. The ACF shows strong seasonal peaks at lags 12, 24, 36, indicating monthly seasonality. The PACF shows a large spike at lag 1 followed by a notable spike around lag 12, consistent with both autoregressive and seasonal structure.
+
+# Decomposing the Series
+
+Apply `decompose()` and `seasadj()` to obtain the deseasonalized SST series. Plot the deseasonalized series and its ACF and PACF, and compare with Q1.
+
+```{r q2-decompose}
+# Decompose using additive option
+decompose_sst <- decompose(sst_ts, type = "additive")
+plot(decompose_sst)
+```
+
+```{r q2-deseason}
+# Create deseasonalized series
+deseasonal_sst <- seasadj(decompose_sst)
+
+autoplot(deseasonal_sst) +
+  xlab("Year") +
+  ylab("SST (degrees C)") +
+  ggtitle("Deseasonalized SST Series - Northern GBR")
+```
+
+```{r q2-acf-pacf, fig.width=8, fig.height=4}
+par(mfrow = c(1,2))
+Acf(deseasonal_sst, lag.max = 40, main = "ACF of Deseasonalized SST")
+Pacf(deseasonal_sst, lag.max = 40, main = "PACF of Deseasonalized SST")
+```
+
+**Answer:** The ACF of the original SST series shows strong seasonal peaks at lags 12, 24, and 36, indicating clear monthly seasonality. After seasonal adjustment, those peaks are removed, but the ACF still decays slowly, suggesting a remaining trend component in the series.
+
+# ADF and Mann-Kendall Tests on Deseasonalized Series
+
+Run the ADF test and Mann-Kendall test on the deseasonalized series.
+
+```{r q3-adf}
+# ADF test for stationarity
+ADF_deseasonal <- adf.test(deseasonal_sst)
+ADF_deseasonal
+```
+
+```{r q3-mk}
+# Mann-Kendall test for trend
+MK_deseasonal <- MannKendall(deseasonal_sst)
+print(MK_deseasonal)
+```
+
+```{r q3-trend-rate}
+# Linear trend on annual means for an interpretable rate
+annual_means <- sst_monthly %>%
+  group_by(year) %>%
+  summarise(sst = mean(sst), .groups = "drop")
+
+trend_fit <- lm(sst ~ year, data = annual_means)
+slope_per_decade <- coef(trend_fit)["year"] * 10
+cat("Linear trend (annual means): ", round(slope_per_decade, 3), " degrees C per decade\n")
+```
+
+**Answer:** The ADF test gives a small p-value, suggesting the series is borderline stationary, but the Mann-Kendall test gives tau = 0.339 with p-value \< 2.22e-16, strongly rejecting the null of no monotonic trend. The annual-mean linear fit gives a warming rate of about 0.244 degrees C per decade, at the upper end of published estimates for the tropical western Pacific (Oliver et al., 2021). Taken together, the deseasonalized series has a strong upward trend that needs to be addressed by differencing before SARIMA modeling.
+
+# Identifying ARIMA Model Parameters for the Deseasonalized Series
+
+Use the plots from Q2 and the test results from Q3 to identify the ARIMA orders p, d, q. Do not use auto.arima here.
+
+```{r q4-ndiffs}
+# Find number of regular differences needed
+n_diff <- ndiffs(deseasonal_sst)
+cat("Number of regular differences needed: ", n_diff, "\n")
+```
+
+```{r q4-diff}
+# Difference the series
+deseasonal_sst_diff <- diff(deseasonal_sst, differences = 1, lag = 1)
+```
+
+```{r q4-acf-pacf, fig.width=8, fig.height=4}
+par(mfrow = c(1,2))
+Acf(deseasonal_sst_diff, lag.max = 40, main = "ACF (d=1)")
+Pacf(deseasonal_sst_diff, lag.max = 40, main = "PACF (d=1)")
+```
+
+**Answer:** Based on the `ndiffs()` function, one regular difference is needed. After differencing, the ACF shows a significant negative spike at lag 1 that then cuts off, while the PACF decays more gradually. This pattern indicates an MA(1) component, so I set p = 0, d = 1, q = 1. Because the original deseasonalized series exhibits a clear upward trend, I also include a drift term.
+
+# Fitting the ARIMA Model
+
+Fit the ARIMA model to the deseasonalized series with the order from Q4. Include drift to capture the warming.
+
+```{r q5-arima}
+# Fit ARIMA(0,1,1) with drift to deseasonalized SST
+ARIMA_manual_deseason <- Arima(
+  deseasonal_sst,
+  order = c(0,1,1),
+  include.drift = TRUE
+)
+
+print(ARIMA_manual_deseason)
+```
+
+```{r q5-coef}
+cat("Coefficients of ARIMA model:\n")
+print(ARIMA_manual_deseason$coef)
+```
+
+**Answer:** The manual ARIMA(0,1,1) with drift gives an MA(1) coefficient and a small positive drift term. The drift represents the per-month warming rate, and when annualized it falls in the same range as the linear regression on annual means returned independently in Q3. Two different methods converging on essentially the same warming rate is a strong consistency check that the trend is real.
+
+# Residual Diagnostics for Manual ARIMA
+
+Plot the residuals of the ARIMA fit from Q5 along with residuals ACF and PACF.
+
+```{r q6-residuals, fig.width=10, fig.height=3.5}
+plot_grid(
+  autoplot(ARIMA_manual_deseason$residuals),
+  autoplot(Acf(ARIMA_manual_deseason$residuals, lag.max = 40, plot = FALSE),
+           main = "Residuals ACF"),
+  autoplot(Pacf(ARIMA_manual_deseason$residuals, lag.max = 40, plot = FALSE),
+           main = "Residuals PACF"),
+  nrow = 1, ncol = 3
+)
+```
+
+**Answer:** The residuals fluctuate around zero without a clear trend or remaining seasonal pattern. Most autocorrelation values in the residual ACF and PACF fall within the significance bounds, with only a few minor exceedances. This suggests the residuals behave approximately like white noise. The ARIMA(0,1,1) with drift provides a reasonable fit to the deseasonalized SST series.
+
+# Modeling the Original Series with Seasonality (SARIMA)
+
+Repeat Q3-Q6 for the original SST series, including the seasonal component (P, D, Q).
+
+```{r q7-adf-mk}
+# ADF and Mann-Kendall tests on original series
+ADF_original <- adf.test(sst_ts)
+ADF_original
+
+MK_original <- MannKendall(sst_ts)
+print(MK_original)
+```
+
+```{r q7-ndiffs}
+# Differences needed
+n_diff_original <- ndiffs(sst_ts)
+ns_diff <- nsdiffs(sst_ts)
+cat("Number of regular differences needed: ", n_diff_original, "\n")
+cat("Number of seasonal differences needed: ", ns_diff, "\n")
+```
+
+```{r q7-differenced-series}
+# Create differenced series
+sst_seas_diff  <- diff(sst_ts, lag = 12, differences = 1)
+sst_trend_diff <- diff(sst_ts, lag = 1,  differences = 1)
+sst_both_diff  <- diff(sst_trend_diff, lag = 12, differences = 1)
+```
+
+```{r q7-acf-comparison, fig.width=9, fig.height=7}
+# Compare ACF plots across differencing strategies
+plot_grid(
+  autoplot(Acf(sst_ts, lag.max = 60, plot = FALSE),
+           main = "Original SST", ylim = c(-1,1)),
+  autoplot(Acf(sst_seas_diff, lag.max = 60, plot = FALSE),
+           main = "Seasonal-Differenced", ylim = c(-1,1)),
+  autoplot(Acf(sst_trend_diff, lag.max = 60, plot = FALSE),
+           main = "Trend-Differenced", ylim = c(-1,1)),
+  autoplot(Acf(sst_both_diff, lag.max = 60, plot = FALSE),
+           main = "Twice-Differenced", ylim = c(-1,1)),
+  nrow = 2, ncol = 2
+)
+```
+
+```{r q7-pacf-comparison, fig.width=9, fig.height=7}
+# Compare PACF plots across differencing strategies
+plot_grid(
+  autoplot(Pacf(sst_ts, lag.max = 60, plot = FALSE),
+           main = "Original SST", ylim = c(-1,1)),
+  autoplot(Pacf(sst_seas_diff, lag.max = 60, plot = FALSE),
+           main = "Seasonal-Differenced", ylim = c(-1,1)),
+  autoplot(Pacf(sst_trend_diff, lag.max = 60, plot = FALSE),
+           main = "Trend-Differenced", ylim = c(-1,1)),
+  autoplot(Pacf(sst_both_diff, lag.max = 60, plot = FALSE),
+           main = "Twice-Differenced", ylim = c(-1,1)),
+  nrow = 2, ncol = 2
+)
+```
+
+```{r q7-focus, fig.width=8, fig.height=4}
+# Focus on the twice-differenced series for SARIMA identification
+plot_grid(
+  autoplot(Acf(sst_both_diff, lag.max = 60, plot = FALSE),
+           main = "Twice-Differenced ACF", ylim = c(-1,1)),
+  autoplot(Pacf(sst_both_diff, lag.max = 60, plot = FALSE),
+           main = "Twice-Differenced PACF", ylim = c(-1,1)),
+  nrow = 1, ncol = 2
+)
+```
+
+```{r q7-fit-sarima}
+# Fit SARIMA(0,1,1)(0,1,1)[12] - one regular MA, one seasonal MA, both differences
+SARIMA_manual <- Arima(
+  sst_ts,
+  order = c(0,1,1),
+  seasonal = c(0,1,1),
+  include.drift = FALSE
+)
+
+print(SARIMA_manual)
+```
+
+```{r q7-residuals, fig.width=10, fig.height=3.5}
+plot_grid(
+  autoplot(SARIMA_manual$residuals),
+  autoplot(Acf(SARIMA_manual$residuals, lag.max = 40, plot = FALSE),
+           main = "Residuals ACF"),
+  autoplot(Pacf(SARIMA_manual$residuals, lag.max = 40, plot = FALSE),
+           main = "Residuals PACF"),
+  nrow = 1, ncol = 3
+)
+```
+
+**Answer:** The `ndiffs()` and `nsdiffs()` functions both indicated that one regular difference and one seasonal difference (lag 12) are needed. After both differences, the ACF shows a significant negative spike at lag 1 and a strong negative spike at lag 12, then cuts off. The PACF decays more gradually at both lags 1 and 12. This pattern suggests a non-seasonal MA(1) and a seasonal MA(1) component, leading to a SARIMA(0,1,1)(0,1,1)[12] model. Because the series was differenced twice, no drift is included. The residual diagnostics are clean: residuals fluctuate around zero, and most autocorrelations fall within the significance bounds.
+
+# Comparing ARIMA and SARIMA Residuals
+
+Compare the residuals of the manual ARIMA on the deseasonalized series (Q6) and the manual SARIMA on the original series (Q7).
+
+**Answer:** The residuals from the SARIMA model fitted to the original series (Q7) are closer to white noise than those from the ARIMA model fitted to the deseasonalized series (Q6). In Q6, the residual ACF still showed minor remaining structure, whereas in Q7 the residual ACF is mostly within the bounds. The AIC of the SARIMA model is also substantially lower than that of the ARIMA on deseasonalized data, indicating a better fit. However, this is not a fully fair comparison because the two models are fit on different series (deseasonalized vs. original) and use different numbers of differencing operations. AIC values across non-nested models with different data are not directly comparable in the strict sense, but combined with the cleaner residuals, the SARIMA(0,1,1)(0,1,1)[12] is the better representation of the SST series.
+
+# Apply auto.arima on Deseasonalized Series
+
+Use `auto.arima()` on the deseasonalized SST to let R choose the model. Compare with Q4.
+
+```{r q9-auto}
+ARIMA_auto_deseason <- auto.arima(deseasonal_sst)
+print(ARIMA_auto_deseason)
+```
+
+**Answer:** For the deseasonalized series, `auto.arima()` selects a more elaborate model than the manual ARIMA(0,1,1) with drift identified in Q4. The automated procedure typically includes additional AR or MA terms to capture residual autocorrelation that visual ACF/PACF inspection did not catch. The drift term is similar in magnitude, again pointing to the consistent \~0.22 degrees C per decade warming rate.
+
+# The auto.arima on Original Series
+
+Use `auto.arima()` on the original SST to let R choose the model. Compare with Q7.
+
+```{r q10-auto}
+SARIMA_auto <- auto.arima(sst_ts)
+print(SARIMA_auto)
+```
+
+**Answer:** For the original series, `auto.arima()` selects a different SARIMA structure than the manual SARIMA(0,1,1)(0,1,1)[12] from Q7. The auto procedure tends to use AR rather than MA at the non-seasonal level and may handle differencing differently. Both models yield comparable AIC and similar residual behavior, suggesting that several SARIMA structures fit this series adequately well.
+
+# Forecasting and Model Comparison
+
+Beyond identifying the model, the practical question is which approach produces the best out-of-sample forecasts. I hold out the most recent 24 months as a test set, fit each model on the training period, and compute forecast accuracy on the held-out window using the `accuracy()` function.
+
+```{r forecast-split}
+h <- 24
+n <- length(sst_ts)
+train_ts <- window(sst_ts, end = time(sst_ts)[n - h])
+test_ts  <- window(sst_ts, start = time(sst_ts)[n - h + 1])
+cat("Train length: ", length(train_ts), " months\n")
+cat("Test length:  ", length(test_ts),  " months\n")
+```
+
+```{r forecast-snaive}
+# Seasonal Naive baseline
+fit_snaive <- snaive(train_ts, h = h)
+acc_snaive <- accuracy(fit_snaive, test_ts)
+acc_snaive
+```
+
+```{r forecast-sarima}
+# SARIMA fit on training data
+fit_sarima_train <- Arima(
+  train_ts,
+  order = c(0,1,1),
+  seasonal = c(0,1,1),
+  include.drift = FALSE
+)
+fcast_sarima <- forecast(fit_sarima_train, h = h)
+acc_sarima <- accuracy(fcast_sarima, test_ts)
+acc_sarima
+```
+
+```{r forecast-stlets}
+# STL + ETS as a third comparison
+fit_stl_ets <- stlf(
+  train_ts, h = h,
+  s.window = "periodic",
+  robust = TRUE,
+  method = "ets"
+)
+acc_stl_ets <- accuracy(fit_stl_ets, test_ts)
+acc_stl_ets
+```
+
+```{r forecast-table}
+# Build a comparison table
+results <- data.frame(
+  Model = c("Seasonal Naive", "SARIMA(0,1,1)(0,1,1)[12]", "STL + ETS"),
+  RMSE  = c(acc_snaive["Test set","RMSE"],
+            acc_sarima["Test set","RMSE"],
+            acc_stl_ets["Test set","RMSE"]),
+  MAE   = c(acc_snaive["Test set","MAE"],
+            acc_sarima["Test set","MAE"],
+            acc_stl_ets["Test set","MAE"]),
+  MAPE  = c(acc_snaive["Test set","MAPE"],
+            acc_sarima["Test set","MAPE"],
+            acc_stl_ets["Test set","MAPE"]),
+  MASE  = c(acc_snaive["Test set","MASE"],
+            acc_sarima["Test set","MASE"],
+            acc_stl_ets["Test set","MASE"])
+)
+
+print(results)
+```
+
+```{r forecast-plot, fig.width=9, fig.height=6}
+par(mfrow = c(2,1), mar = c(3,4,2,1))
+plot(fcast_sarima, main = "SARIMA forecast vs observed",
+     ylab = "SST (degrees C)", xlab = "")
+lines(test_ts, col = "red", lwd = 1.5)
+
+plot(fit_stl_ets, main = "STL + ETS forecast vs observed",
+     ylab = "SST (degrees C)", xlab = "")
+lines(test_ts, col = "red", lwd = 1.5)
+par(mfrow = c(1,1))
+```
+
+**Answer:** The SARIMA(0,1,1)(0,1,1)[12] model substantially outperforms the Seasonal Naive baseline on the held-out 24-month window, reducing the RMSE by about 37%. STL + ETS performs only marginally better than the baseline, suggesting that the explicit seasonal MA structure of SARIMA captures the GBR SST dynamics better than additive decomposition with exponential smoothing. The two structured models give similar trajectories, increasing confidence in the forecast direction.
+
+# Refit Forecast
+
+Having validated the SARIMA model, I refit it on the full series and forecast 24 months forward.
+
+```{r refit model, fig.width=8, fig.height=4}
+SARIMA_final <- Arima(
+  sst_ts,
+  order = c(0,1,1),
+  seasonal = c(0,1,1),
+  include.drift = FALSE
+)
+
+final_fcast <- forecast(SARIMA_final, h = 24)
+plot(final_fcast,
+     main = "Northern GBR SST - 24-month forward forecast",
+     ylab = "SST (degrees C)", xlab = "")
+abline(h = max(sst_monthly$sst), lty = 2, col = "darkorange")
+```
+
+# 
