@@ -454,3 +454,30 @@ abline(h = max(sst_monthly$sst), lty = 2, col = "darkorange")
 ```
 
 # 
+**Discussion**
+
+Three patterns emerge from the analysis, each consistent with the published marine heatwave literature reviewed for this project:
+
+-   **A statistically significant warming trend.** The Mann-Kendall test rejects the null of no trend (tau = 0.339, p \< 2.22e-16). The annual-mean linear fit and the SARIMA drift term independently converge on roughly 0.22-0.24 degrees C per decade.
+
+-   **A dominant 12-month seasonal cycle.** Decomposition shows a clean annual signal with austral summer maxima. Both regular and seasonal differencing are needed for stationarity.
+
+-   **A non-trivial residual that aligns with bleaching events.** The decomposition remainders show pronounced positive excursions in 2016, 2020, and 2024, which are years of confirmed mass bleaching on the Northern GBR.
+
+**Implications for Coral Reef Management**
+
+Roughly 1 degree C of warming has accumulated over the 40-year record. Coral bleaching is triggered when summer SST exceeds the local seasonal maximum by approximately 1 degree C, so even modest upward shifts in mean SST translate into disproportionate increases in bleaching risk. This is the central mechanism by which the observed warming trend manifests as the accelerating mass-bleaching cadence (six events since 2016 versus two in the previous two decades).
+
+**Limitations and Future Work**
+
+One of the limitations of this project is its only redicting SST is not the same as predicting bleaching or mortality, which depends on species-specific thermal tolerance, prior bleaching history, and local stressors.
+
+I have fun working on this project and learn a lot of new things. This is a great project and I am already thinking to use this for my MP by combining examine coral bleaching data in Southeast Asia using time series and apply machine learning to predict coral bleaching events in the future integrate the SST forecasts with bleaching survey data Coral Triangle Initiative to formally validate the SST-to-bleaching pathway.
+
+**Conclusion**
+
+Time series analysis of four decades of NOAA Coral Reef Watch SST observations for the Northern Great Barrier Reef confirms a statistically significant long-term warming trend superimposed on a dominant annual seasonal cycle. The manually identified SARIMA(0,1,1)(0,1,1)[12] model produces residuals consistent with white noise and substantially outperforms a seasonal Naive baseline on a held-out 24-month window. The forward forecast indicates a continued upward trajectory of summer SST peaks. While statistical forecasting alone cannot predict individual bleaching events, the documented alignment between SST anomalies and confirmed bleaching years on the GBR shows that the value of operational thermal monitoring as a foundation for reef management under accelerating climate stress.
+
+**AI Tools Statement**
+
+I used Claude AI to help debug coding errors I had spent significant time on and could not resolve on my own. It was also used to correct grammar errors.
