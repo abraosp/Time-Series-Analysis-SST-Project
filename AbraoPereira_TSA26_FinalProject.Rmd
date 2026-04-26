@@ -44,7 +44,7 @@ The primary dataset is the NOAA Coral Reef Watch (CRW) Daily 5km Regional Virtua
 -   **Source:** NOAA CRW, file `gbr_northern.txt` (downloaded from NOAA, then converted to CSV)
 -   **Temporal span:** January 1985 - April 2026, total of 41 years of daily observations
 -   **Aggregation:** Daily SST aggregated to monthly mean SST
--   **Reason for monthly aggregation:** Monthly resolution (\~480 obs) gives a clean annual seasonal cycle (period = 12), preserves the long-term trend, supports SARIMA and decompose-based modeling, and is the temporal scale at which mass bleaching events are typically reported.
+-   **Reason for monthly aggregation:** Monthly resolution ( about 480 obs) gives a clean annual seasonal cycle (period = 12), preserves the long-term trend, supports SARIMA and decompose-based modeling, and is the temporal scale at which mass bleaching events are typically reported.
 
 # Data Wrangling
 
@@ -96,7 +96,7 @@ sst_ts <- ts(
 
 # Initial Analysis Time Series Plot, ACF, and PACF
 
-Plot the SST series over time, ACF, and PACF.
+Plot of the SST series over time, ACF, and PACF.
 
 ```{r initial plot}
 ggplot(sst_monthly, aes(x = date, y = sst)) +
@@ -115,7 +115,7 @@ Pacf(sst_ts, lag.max = 40, main = "PACF of Original SST")
 
 # Decomposing the Series
 
-Apply `decompose()` and `seasadj()` to obtain the deseasonalized SST series. Plot the deseasonalized series and its ACF and PACF, and compare with Q1.
+Apply `decompose()` and `seasadj()` to obtain the deseasonalized SST series. Plot the deseasonalized series and its ACF and PACF, and compare.
 
 ```{r decompose}
 # Decompose using additive option
@@ -172,7 +172,7 @@ cat("Linear trend (annual means): ", round(slope_per_decade, 3), " degrees C per
 
 # Identifying ARIMA Model Parameters for the Deseasonalized Series
 
-Use the plots from Q2 and the test results from Q3 to identify the ARIMA orders p, d, q. Do not use auto.arima here.
+Use the plots and the test results to identify the ARIMA orders p, d, q. Do not use auto.arima here.
 
 ```{r q4-ndiffs}
 # Find number of regular differences needed
@@ -195,7 +195,7 @@ Pacf(deseasonal_sst_diff, lag.max = 40, main = "PACF (d=1)")
 
 # Fitting the ARIMA Model
 
-Fit the ARIMA model to the deseasonalized series with the order from Q4. Include drift to capture the warming.
+Fit the ARIMA model to the deseasonalized series with the order. Include drift to capture the warming.
 
 ```{r q5-arima}
 # Fit ARIMA(0,1,1) with drift to deseasonalized SST
@@ -213,11 +213,11 @@ cat("Coefficients of ARIMA model:\n")
 print(ARIMA_manual_deseason$coef)
 ```
 
-**Answer:** The manual ARIMA(0,1,1) with drift gives an MA(1) coefficient and a small positive drift term. The drift represents the per-month warming rate, and when annualized it falls in the same range as the linear regression on annual means returned independently in Q3. Two different methods converging on essentially the same warming rate is a strong consistency check that the trend is real.
+**Answer:** The manual ARIMA(0,1,1) with drift gives an MA(1) coefficient and a small positive drift term. The drift represents the per-month warming rate, and when annualized it falls in the same range as the linear regression on annual means returned independently. Two different methods converging on essentially the same warming rate is a strong consistency check that the trend is real.
 
 # Residual Diagnostics for Manual ARIMA
 
-Plot the residuals of the ARIMA fit from Q5 along with residuals ACF and PACF.
+Plot the residuals of the ARIMA fit along with residuals ACF and PACF.
 
 ```{r q6-residuals, fig.width=10, fig.height=3.5}
 plot_grid(
@@ -328,31 +328,31 @@ plot_grid(
 
 # Comparing ARIMA and SARIMA Residuals
 
-Compare the residuals of the manual ARIMA on the deseasonalized series (Q6) and the manual SARIMA on the original series (Q7).
+Compare the residuals of the manual ARIMA on the deseasonalized series and the manual SARIMA on the original series.
 
-**Answer:** The residuals from the SARIMA model fitted to the original series (Q7) are closer to white noise than those from the ARIMA model fitted to the deseasonalized series (Q6). In Q6, the residual ACF still showed minor remaining structure, whereas in Q7 the residual ACF is mostly within the bounds. The AIC of the SARIMA model is also substantially lower than that of the ARIMA on deseasonalized data, indicating a better fit. However, this is not a fully fair comparison because the two models are fit on different series (deseasonalized vs. original) and use different numbers of differencing operations. AIC values across non-nested models with different data are not directly comparable in the strict sense, but combined with the cleaner residuals, the SARIMA(0,1,1)(0,1,1)[12] is the better representation of the SST series.
+**Answer:** The residuals from the SARIMA model fitted to the original series are closer to white noise than those from the ARIMA model fitted to the deseasonalized series. The residual ACF still showed minor remaining structure, whereas in the residual ACF is mostly within the bounds. The AIC of the SARIMA model is also substantially lower than that of the ARIMA on deseasonalized data, indicating a better fit. However, this is not a fully fair comparison because the two models are fit on different series (deseasonalized vs. original) and use different numbers of differencing operations. AIC values across non-nested models with different data are not directly comparable in the strict sense, but combined with the cleaner residuals, the SARIMA(0,1,1)(0,1,1)[12] is the better representation of the SST series.
 
 # Apply auto.arima on Deseasonalized Series
 
-Use `auto.arima()` on the deseasonalized SST to let R choose the model. Compare with Q4.
+Use `auto.arima()` on the deseasonalized SST to let R choose the model. Compare with deseasonalized.
 
 ```{r q9-auto}
 ARIMA_auto_deseason <- auto.arima(deseasonal_sst)
 print(ARIMA_auto_deseason)
 ```
 
-**Answer:** For the deseasonalized series, `auto.arima()` selects a more elaborate model than the manual ARIMA(0,1,1) with drift identified in Q4. The automated procedure typically includes additional AR or MA terms to capture residual autocorrelation that visual ACF/PACF inspection did not catch. The drift term is similar in magnitude, again pointing to the consistent about 0.22 degrees C per decade warming rate.
+**Answer:** For the deseasonalized series, `auto.arima()` selects a more elaborate model than the manual ARIMA(0,1,1) with drift identified earlier. The automated procedure typically includes additional AR or MA terms to capture residual autocorrelation that visual ACF/PACF inspection did not catch. The drift term is similar in magnitude, again pointing to the consistent about 0.22 degrees C per decade warming rate.
 
 # The auto.arima on Original Series
 
-Use `auto.arima()` on the original SST to let R choose the model. Compare with Q7.
+Use `auto.arima()` on the original SST to let R choose the model. Compar with original series.
 
 ```{r q10-auto}
 SARIMA_auto <- auto.arima(sst_ts)
 print(SARIMA_auto)
 ```
 
-**Answer:** For the original series, `auto.arima()` selects a different SARIMA structure than the manual SARIMA(0,1,1)(0,1,1)[12] from Q7. The auto procedure tends to use AR rather than MA at the non-seasonal level and may handle differencing differently. Both models yield comparable AIC and similar residual behavior, suggesting that several SARIMA structures fit this series adequately well.
+**Answer:** For the original series, `auto.arima()` selects a different SARIMA structure than the manual SARIMA(0,1,1)(0,1,1)[12]. The auto procedure tends to use AR rather than MA at the non-seasonal level and may handle differencing differently. Both models yield comparable AIC and similar residual behavior, suggesting that several SARIMA structures fit this series adequately well.
 
 # Forecasting and Model Comparison
 
@@ -436,7 +436,7 @@ par(mfrow = c(1,1))
 
 # Refit Forecast
 
-Having validated the SARIMA model, I refit it on the full series and forecast 24 months forward.
+Since the SARIMA model was validated, I refit it on the full series and forecast 24 months forward.
 
 ```{r refit model, fig.width=8, fig.height=4}
 SARIMA_final <- Arima(
@@ -483,7 +483,6 @@ Time series analysis of four decades of NOAA Coral Reef Watch SST observations f
 I used Claude AI to help debug coding errors I had spent significant time on and could not resolve on my own. It was also used to correct grammar errors.
 
 # 
-
 **References**
 
 AIMS (Australian Institute of Marine Science). (2025). \*Coral bleaching events.\* <https://www.aims.gov.au/research-topics/environmental-issues/coral-bleaching/coral-bleaching-events>
