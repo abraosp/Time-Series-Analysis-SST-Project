@@ -48,7 +48,7 @@ The primary dataset is the NOAA Coral Reef Watch (CRW) Daily 5km Regional Virtua
 
 # Data Wrangling
 
-```{r import-data}
+```{r import data to R }
 # Import the cleaned SST CSV
 sst_daily <- read.csv(
   "/Users/abraopereira/Documents/ENVIRON 797 /Final_Project_Report _SST/Time-Series-Analysis-SST-Project/gbr_northern_sst.csv",
@@ -62,7 +62,7 @@ sst_daily <- sst_daily %>%
 head(sst_daily)
 ```
 
-```{r aggregate-monthly}
+```{r aggregate monthly data}
 # Aggregate daily SST to monthly means
 sst_monthly <- sst_daily %>%
   mutate(year = year(Date), month = month(Date)) %>%
@@ -85,7 +85,7 @@ cat("Monthly observations: ", nobs, "\n")
 cat("Period: ", start_year, " to ", end_year, "\n")
 ```
 
-```{r ts-object}
+```{r time series object}
 # Create time series object with start = c(year, month) and frequency = 12
 sst_ts <- ts(
   sst_monthly$sst,
@@ -98,14 +98,14 @@ sst_ts <- ts(
 
 Plot the SST series over time, ACF, and PACF.
 
-```{r q1-plot}
+```{r initial plot}
 ggplot(sst_monthly, aes(x = date, y = sst)) +
   geom_line() +
   labs(title = "Monthly Mean SST - Northern Great Barrier Reef (1985-2025)",
        x = "Year", y = "SST (degrees C)")
 ```
 
-```{r q1-acf-pacf, fig.width=8, fig.height=4}
+```{r first acf and pacf, fig.width=8, fig.height=4}
 par(mfrow = c(1,2))
 Acf(sst_ts, lag.max = 40, main = "ACF of Original SST")
 Pacf(sst_ts, lag.max = 40, main = "PACF of Original SST")
@@ -117,13 +117,13 @@ Pacf(sst_ts, lag.max = 40, main = "PACF of Original SST")
 
 Apply `decompose()` and `seasadj()` to obtain the deseasonalized SST series. Plot the deseasonalized series and its ACF and PACF, and compare with Q1.
 
-```{r q2-decompose}
+```{r decompose}
 # Decompose using additive option
 decompose_sst <- decompose(sst_ts, type = "additive")
 plot(decompose_sst)
 ```
 
-```{r q2-deseason}
+```{r deseason}
 # Create deseasonalized series
 deseasonal_sst <- seasadj(decompose_sst)
 
@@ -133,7 +133,7 @@ autoplot(deseasonal_sst) +
   ggtitle("Deseasonalized SST Series - Northern GBR")
 ```
 
-```{r q2-acf-pacf, fig.width=8, fig.height=4}
+```{r second acf and pacf, fig.width=8, fig.height=4}
 par(mfrow = c(1,2))
 Acf(deseasonal_sst, lag.max = 40, main = "ACF of Deseasonalized SST")
 Pacf(deseasonal_sst, lag.max = 40, main = "PACF of Deseasonalized SST")
@@ -145,19 +145,19 @@ Pacf(deseasonal_sst, lag.max = 40, main = "PACF of Deseasonalized SST")
 
 Run the ADF test and Mann-Kendall test on the deseasonalized series.
 
-```{r q3-adf}
+```{r adf}
 # ADF test for stationarity
 ADF_deseasonal <- adf.test(deseasonal_sst)
 ADF_deseasonal
 ```
 
-```{r q3-mk}
+```{r Mann Kendall test}
 # Mann-Kendall test for trend
 MK_deseasonal <- MannKendall(deseasonal_sst)
 print(MK_deseasonal)
 ```
 
-```{r q3-trend-rate}
+```{r trend-rate}
 # Linear trend on annual means for an interpretable rate
 annual_means <- sst_monthly %>%
   group_by(year) %>%
@@ -168,7 +168,7 @@ slope_per_decade <- coef(trend_fit)["year"] * 10
 cat("Linear trend (annual means): ", round(slope_per_decade, 3), " degrees C per decade\n")
 ```
 
-**Answer:** The ADF test gives a small p-value, suggesting the series is borderline stationary, but the Mann-Kendall test gives tau = 0.339 with p-value \< 2.22e-16, strongly rejecting the null of no monotonic trend. The annual-mean linear fit gives a warming rate of about 0.244 degrees C per decade, at the upper end of published estimates for the tropical western Pacific (Oliver et al., 2021). Taken together, the deseasonalized series has a strong upward trend that needs to be addressed by differencing before SARIMA modeling.
+**Answer:** The ADF test gives a small p-value, suggesting the series is borderline stationary, but the Mann-Kendall test gives mkt = 0.339 with p-value \< 2.22e-16, strongly rejecting the null of no monotonic trend. The annual-mean linear fit gives a warming rate of about 0.244 degrees C per decade, at the upper end of published estimates for the tropical western Pacific (Oliver et al., 2021). Taken together, the deseasonalized series has a strong upward trend that needs to be addressed by differencing before SARIMA modeling.
 
 # Identifying ARIMA Model Parameters for the Deseasonalized Series
 
@@ -341,7 +341,7 @@ ARIMA_auto_deseason <- auto.arima(deseasonal_sst)
 print(ARIMA_auto_deseason)
 ```
 
-**Answer:** For the deseasonalized series, `auto.arima()` selects a more elaborate model than the manual ARIMA(0,1,1) with drift identified in Q4. The automated procedure typically includes additional AR or MA terms to capture residual autocorrelation that visual ACF/PACF inspection did not catch. The drift term is similar in magnitude, again pointing to the consistent \~0.22 degrees C per decade warming rate.
+**Answer:** For the deseasonalized series, `auto.arima()` selects a more elaborate model than the manual ARIMA(0,1,1) with drift identified in Q4. The automated procedure typically includes additional AR or MA terms to capture residual autocorrelation that visual ACF/PACF inspection did not catch. The drift term is similar in magnitude, again pointing to the consistent about 0.22 degrees C per decade warming rate.
 
 # The auto.arima on Original Series
 
@@ -458,7 +458,7 @@ abline(h = max(sst_monthly$sst), lty = 2, col = "darkorange")
 
 Three patterns emerge from the analysis, each consistent with the published marine heatwave literature reviewed for this project:
 
--   **A statistically significant warming trend.** The Mann-Kendall test rejects the null of no trend (tau = 0.339, p \< 2.22e-16). The annual-mean linear fit and the SARIMA drift term independently converge on roughly 0.22-0.24 degrees C per decade.
+-   **A statistically significant warming trend.** The Mann-Kendall test rejects the null of no trend (mkt = 0.339, p \< 2.22e-16). The annual-mean linear fit and the SARIMA drift term independently converge on roughly 0.22-0.24 degrees C per decade.
 
 -   **A dominant 12-month seasonal cycle.** Decomposition shows a clean annual signal with austral summer maxima. Both regular and seasonal differencing are needed for stationarity.
 
@@ -481,3 +481,19 @@ Time series analysis of four decades of NOAA Coral Reef Watch SST observations f
 **AI Tools Statement**
 
 I used Claude AI to help debug coding errors I had spent significant time on and could not resolve on my own. It was also used to correct grammar errors.
+
+# 
+
+**References**
+
+AIMS (Australian Institute of Marine Science). (2025). \*Coral bleaching events.\* <https://www.aims.gov.au/research-topics/environmental-issues/coral-bleaching/coral-bleaching-events>
+
+Hobday, A. J., Alexander, L. V., Perkins, S. E., Smale, D. A., Straub, S. C., Oliver, E. C. J., Benthuysen, J. A., Burrows, M. T., Donat, M. G., Feng, M., Holbrook, N. J., Moore, P. J., Scannell, H. A., Sen Gupta, A., & Wernberg, T. (2016). A hierarchical approach to defining marine heatwaves. \*Progress in Oceanography\*, 141, 227-238. <https://doi.org/10.1016/j.pocean.2015.12.014>
+
+Hughes, T. P., Kerry, J. T., Alvarez-Noriega, M., et al. (2017). Global warming and recurrent mass bleaching of corals. \*Nature\*, 543, 373-377. <https://doi.org/10.1038/nature21707>
+
+Jacox, M. G., Alexander, M. A., Amaya, D., Becker, E., Bograd, S. J., Brodie, S., Hazen, E. L., Pozo Buil, M., & Tommasi, D. (2022). Global seasonal forecasts of marine heatwaves. \*Nature\*, 604(7906), 486-490. <https://doi.org/10.1038/s41586-022-04573-9>
+
+NOAA Coral Reef Watch. (2025). \*Daily Global 5km Satellite Coral Bleaching Heat Stress Monitoring (Version 3.1) - Great Barrier Reef Regional Virtual Stations.\* <https://coralreefwatch.noaa.gov/product/vs/timeseries/great_barrier_reef.php>
+
+Oliver, E. C. J., Benthuysen, J. A., Darmaraki, S., Donat, M. G., Hobday, A. J., Holbrook, N. J., Schlegel, R. W., & Sen Gupta, A. (2021). Marine Heatwaves. \*Annual Review of Marine Science\*, 13, 313-342. <https://doi.org/10.1146/annurev-marine-032720-095144>
